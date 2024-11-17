@@ -8,7 +8,7 @@ name = "wavup"
 path = "src/lib.rs"
 
 [[bin]]
-name = "toowav"
+name = "wavup"
 path = "src/main.rs"
 
 [dependencies]
