@@ -1,3 +1,4 @@
+use clap::Parser;
 use hound::SampleFormat;
 use hound::{WavSpec, WavWriter};
 use std::fs::File;
@@ -10,10 +11,21 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::default::get_probe;
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Input audio file path
+    #[arg(short, long)]
+    input: String,
+
+    /// Output WAV file path
+    #[arg(short, long, default_value = "output.wav")]
+    out_file: String,
+}
+
 fn main() {
-    let input_path = "audio/example.ogg"; // 替换为你的输入文件路径
-    let output_path = "output.wav"; // 替换为你的输出文件路径
-    convert_to_wav(input_path, output_path);
+    let args = Args::parse();
+    convert_to_wav(&args.input, &args.out_file);
 }
 
 fn convert_to_wav(input_path: &str, output_path: &str) {

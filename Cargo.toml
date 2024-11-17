@@ -7,3 +7,4 @@ edition = "2021"
 symphonia = { version = "0.5", features = ["all"] }
 rubato = "0.14"
 hound = "3.5"
+clap = { version = "4.4", features = ["derive"] }
