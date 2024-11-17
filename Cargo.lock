@@ -614,17 +614,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "toowav"
-version = "0.1.0"
-dependencies = [
- "clap",
- "hound",
- "log",
- "rubato",
- "symphonia",
-]
-
-[[package]]
 name = "transpose"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -693,6 +682,17 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "wavup"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hound",
+ "log",
+ "rubato",
+ "symphonia",
+]
 
 [[package]]
 name = "windows-sys"
