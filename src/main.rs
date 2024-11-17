@@ -22,7 +22,7 @@ fn main() {
 
     let converter = wavup::AudioConverter::new(args.input, args.out_file.clone(), args.sample_rate);
 
-    if let Err(e) = converter.convert() {
+    if let Err(e) = converter.convert_audio() {
         eprintln!("Error converting audio: {}", e);
         process::exit(1);
     }

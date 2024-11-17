@@ -1,18 +1,17 @@
-use hound::{SampleFormat, WavSpec, WavWriter};
-use rubato::{FftFixedInOut, Resampler};
-use std::fs::File;
-use std::io::BufWriter;
-use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::codecs::{CODEC_TYPE_FLAC, CODEC_TYPE_OPUS, CODEC_TYPE_VORBIS};
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-use symphonia::default::get_probe;
-
 mod error;
 pub use error::AudioConversionError;
+
+use hound::{WavSpec, WavWriter};
+use rubato::{FftFixedInOut, Resampler};
+use std::fs::File;
+use symphonia::core::{
+    audio::SampleBuffer,
+    codecs::{DecoderOptions, CODEC_TYPE_FLAC, CODEC_TYPE_OPUS, CODEC_TYPE_VORBIS},
+    formats::FormatOptions,
+    io::MediaSourceStream,
+    meta::MetadataOptions,
+    probe::Hint,
+};
 
 pub struct AudioConverter {
     input_path: String,
@@ -29,227 +28,176 @@ impl AudioConverter {
         }
     }
 
-    pub fn convert(&self) -> Result<(), AudioConversionError> {
-        // Open input audio file
-        let input_file = File::open(&self.input_path)?;
-        let mss = MediaSourceStream::new(Box::new(input_file), Default::default());
+    pub fn convert_audio(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // 打开OGA文件
+        let file = File::open(&self.input_path)?;
+        let media_source = MediaSourceStream::new(Box::new(file), Default::default());
 
-        // Create probe hint
-        let hint = Hint::new();
+        let mut hint = Hint::new();
+        hint.with_extension("oga");
 
-        // Use default format options
         let format_opts: FormatOptions = Default::default();
         let metadata_opts: MetadataOptions = Default::default();
+        let decoder_opts: DecoderOptions = Default::default();
 
-        // Probe the format
-        let probe = get_probe();
-        let probed = probe
-            .format(&hint, mss, &format_opts, &metadata_opts)
-            .map_err(|e| AudioConversionError::DecoderError(e.to_string()))?;
+        // Probe the media source
+        let probed = symphonia::default::get_probe().format(
+            &hint,
+            media_source,
+            &format_opts,
+            &metadata_opts,
+        )?;
+        let mut format = probed.format;
 
-        // Iterate through the tracks and find audio tracks.
-        for track in probed.format.tracks() {
-            println!("Found audio track:");
-            let codec = track.codec_params.codec;
-            match codec {
-                CODEC_TYPE_VORBIS => println!("Codec: Vorbis"),
-                CODEC_TYPE_OPUS => println!("Codec: Opus"),
-                CODEC_TYPE_FLAC => println!("Codec: FLAC"),
-                _ => println!("Codec: Other ({:?})", codec),
-            }
+        {
+            // Iterate through the tracks and find audio tracks.
+            for track in format.tracks() {
+                println!("Found audio track:");
+                let codec = track.codec_params.codec;
+                match codec {
+                    CODEC_TYPE_VORBIS => println!("Codec: Vorbis"),
+                    CODEC_TYPE_OPUS => println!("Codec: Opus"),
+                    CODEC_TYPE_FLAC => println!("Codec: FLAC"),
+                    _ => println!("Codec: Other ({:?})", codec),
+                }
 
-            // Print additional codec parameters.
-            if let Some(channels) = track.codec_params.channels {
-                println!("Channels: {}", channels.count());
-            }
-            if let Some(sample_rate) = track.codec_params.sample_rate {
-                println!("Sample rate: {} Hz", sample_rate);
+                // Print additional codec parameters.
+                if let Some(channels) = track.codec_params.channels {
+                    println!("Channels: {}", channels.count());
+                }
+                if let Some(sample_rate) = track.codec_params.sample_rate {
+                    println!("Sample rate: {} Hz", sample_rate);
+                }
             }
         }
 
-        // Get the default track and decoder
-        let track = probed
-            .format
-            .default_track()
-            .ok_or_else(|| AudioConversionError::DecoderError("No default track found".into()))?;
+        let track = format.default_track().unwrap();
+        let mut decoder =
+            symphonia::default::get_codecs().make(&track.codec_params, &decoder_opts)?;
 
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
-            .map_err(|e| AudioConversionError::DecoderError(e.to_string()))?;
+        // Get audio info
+        let track_info = track.codec_params.clone();
+        let channels = track_info.channels.unwrap().count();
+        let original_sample_rate = track_info.sample_rate.unwrap();
 
-        // Get sample rates and channels
-        let input_sample_rate = track.codec_params.sample_rate.unwrap();
-        let channels = track.codec_params.channels.unwrap().count() as u16;
-
-        // Prepare WAV writer
+        // Set up WAV writer
         let spec = WavSpec {
-            channels,
+            channels: channels as u16,
             sample_rate: self.target_sample_rate,
             bits_per_sample: 16,
-            sample_format: SampleFormat::Int,
+            sample_format: hound::SampleFormat::Int,
         };
+        let mut wav_writer = WavWriter::create(&self.output_path, spec)?;
 
-        let output_file = File::create(&self.output_path)?;
-        let mut writer = WavWriter::new(BufWriter::new(output_file), spec).map_err(|e| {
-            AudioConversionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
-
-        // Initialize resampler if needed
-        let mut resampler = if input_sample_rate != self.target_sample_rate {
-            Some(
-                FftFixedInOut::<f32>::new(
-                    input_sample_rate as usize,
-                    self.target_sample_rate as usize,
-                    4096,
-                    channels as usize,
-                )
-                .map_err(|e| AudioConversionError::ResamplerError(e.to_string()))?,
-            )
-        } else {
-            None
-        };
-
-        // Create buffers for resampling
-        let mut input_buffer: Vec<Vec<f32>> = vec![Vec::new(); channels as usize];
-        let mut accumulated_buffer: Vec<Vec<f32>> = vec![Vec::new(); channels as usize];
-
-        // Process audio
-        let mut format = probed.format;
-        while let Ok(packet) = format.next_packet() {
-            let decoded = decoder
-                .decode(&packet)
-                .map_err(|e| AudioConversionError::DecoderError(e.to_string()))?;
-
-            match decoded {
-                AudioBufferRef::F32(buffer) => {
-                    self.process_audio_buffer(
-                        &buffer,
-                        &mut writer,
-                        &mut resampler,
-                        &mut input_buffer,
-                        &mut accumulated_buffer,
-                    )?;
+        if original_sample_rate == self.target_sample_rate {
+            // No resampling needed
+            let mut sample_buf: Option<SampleBuffer<f32>> = None;
+            while let Ok(packet) = format.next_packet() {
+                let decoded = decoder.decode(&packet)?;
+                if sample_buf.is_none() {
+                    sample_buf = Some(SampleBuffer::new(
+                        decoded.capacity() as u64,
+                        *decoded.spec(),
+                    ));
                 }
-                _ => {
-                    return Err(AudioConversionError::UnsupportedFormat(
-                        "Only F32 audio buffers are supported".into(),
-                    ))
+                let sample_buf = sample_buf.as_mut().unwrap();
+                sample_buf.copy_interleaved_ref(decoded);
+
+                for sample in sample_buf.samples() {
+                    wav_writer.write_sample((sample * 32768.0_f32) as i16)?;
                 }
             }
-        }
+        } else {
+            println!(
+                "Resampling from {}Hz to {}Hz",
+                original_sample_rate, self.target_sample_rate
+            );
 
-        // Process remaining samples
-        self.process_remaining_samples(
-            &mut writer,
-            &mut resampler,
-            &mut input_buffer,
-            &accumulated_buffer,
-        )?;
+            // Collect all samples first
+            let mut all_samples = Vec::new();
+            let mut sample_buf = None;
 
-        writer.finalize().map_err(|e| {
-            AudioConversionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
+            while let Ok(packet) = format.next_packet() {
+                let decoded = decoder.decode(&packet)?;
+                if sample_buf.is_none() {
+                    sample_buf = Some(SampleBuffer::new(
+                        decoded.capacity() as u64,
+                        *decoded.spec(),
+                    ));
+                }
+                let sample_buf = sample_buf.as_mut().unwrap();
+                sample_buf.copy_interleaved_ref(decoded);
 
-        Ok(())
-    }
+                all_samples.extend(sample_buf.samples().iter().map(|s: &f32| *s as f32));
+            }
 
-    fn process_audio_buffer(
-        &self,
-        buffer: &symphonia::core::audio::AudioBuffer<f32>,
-        writer: &mut WavWriter<BufWriter<File>>,
-        resampler: &mut Option<FftFixedInOut<f32>>,
-        input_buffer: &mut Vec<Vec<f32>>,
-        accumulated_buffer: &mut Vec<Vec<f32>>,
-    ) -> Result<(), AudioConversionError> {
-        let channels = buffer.spec().channels.count();
+            // Convert samples to f32
+            let samples_f32: Vec<f32> = all_samples.iter().map(|s| *s as f32).collect();
 
-        // Accumulate decoded audio data
-        for ch in 0..channels {
-            accumulated_buffer[ch].extend_from_slice(buffer.chan(ch));
-        }
+            // Prepare samples for resampler (separate channels)
+            let mut input_channels: Vec<Vec<f32>> = vec![Vec::new(); channels];
+            for (i, sample) in samples_f32.iter().enumerate() {
+                input_channels[i % channels].push(*sample);
+            }
 
-        if let Some(resampler) = resampler {
+            // Create resampler
+            let mut resampler = FftFixedInOut::<f32>::new(
+                original_sample_rate as usize,
+                self.target_sample_rate as usize,
+                4096,
+                channels,
+            )?;
+
+            // Process the audio in chunks
             let chunk_size = resampler.input_frames_next();
+            let mut output_buffer = vec![Vec::new(); channels];
 
-            // Process complete chunks
-            while accumulated_buffer[0].len() >= chunk_size {
-                // Prepare input chunk
+            // Process full chunks
+            let mut pos = 0;
+            while pos + chunk_size <= input_channels[0].len() {
+                let mut chunk = vec![Vec::new(); channels];
                 for ch in 0..channels {
-                    input_buffer[ch] = accumulated_buffer[ch][..chunk_size].to_vec();
-                    accumulated_buffer[ch].drain(0..chunk_size);
+                    chunk[ch] = input_channels[ch][pos..pos + chunk_size].to_vec();
                 }
 
-                // Perform resampling
-                let output_buffer = resampler
-                    .process(&input_buffer, None)
-                    .map_err(|e| AudioConversionError::ResamplerError(e.to_string()))?;
-
-                // Write resampled audio
-                self.write_output_buffer(writer, &output_buffer)?;
-            }
-        } else {
-            // No resampling needed, write directly
-            for frame in 0..buffer.frames() {
-                for channel in 0..channels {
-                    let sample = buffer.chan(channel)[frame];
-                    let int_sample = (sample * i16::MAX as f32) as i16;
-                    writer.write_sample(int_sample).map_err(|e| {
-                        AudioConversionError::IoError(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            e,
-                        ))
-                    })?;
+                if let Ok(mut resampled_chunk) = resampler.process(&chunk, None) {
+                    for ch in 0..channels {
+                        output_buffer[ch].append(&mut resampled_chunk[ch]);
+                    }
                 }
+                pos += chunk_size;
             }
-        }
 
-        Ok(())
-    }
-
-    fn process_remaining_samples(
-        &self,
-        writer: &mut WavWriter<BufWriter<File>>,
-        resampler: &mut Option<FftFixedInOut<f32>>,
-        input_buffer: &mut Vec<Vec<f32>>,
-        accumulated_buffer: &[Vec<f32>],
-    ) -> Result<(), AudioConversionError> {
-        if let Some(resampler) = resampler {
-            if !accumulated_buffer[0].is_empty() {
-                let chunk_size = resampler.input_frames_next();
-                let channels = accumulated_buffer.len();
-
-                // Pad remaining samples
+            // Process remaining samples if any
+            if pos < input_channels[0].len() {
+                let mut final_chunk = vec![Vec::new(); channels];
                 for ch in 0..channels {
-                    input_buffer[ch] = accumulated_buffer[ch].clone();
-                    input_buffer[ch].resize(chunk_size, 0.0);
+                    final_chunk[ch] = input_channels[ch][pos..].to_vec();
+                    // Pad with zeros if necessary
+                    final_chunk[ch].resize(chunk_size, 0.0);
                 }
 
-                // Final resampling
-                let output_buffer = resampler
-                    .process(&input_buffer, None)
-                    .map_err(|e| AudioConversionError::ResamplerError(e.to_string()))?;
+                if let Ok(resampled_chunk) = resampler.process(&final_chunk, None) {
+                    let remaining_samples = (input_channels[0].len() - pos)
+                        * self.target_sample_rate as usize
+                        / original_sample_rate as usize;
+                    for ch in 0..channels {
+                        output_buffer[ch].extend(&resampled_chunk[ch][..remaining_samples]);
+                    }
+                }
+            }
 
-                self.write_output_buffer(writer, &output_buffer)?;
+            // Write resampled data
+            for i in 0..output_buffer[0].len() {
+                for ch in 0..channels {
+                    let sample = (output_buffer[ch][i] * 32768.0) as i16;
+                    wav_writer.write_sample(sample)?;
+                }
             }
         }
 
-        Ok(())
-    }
+        wav_writer.finalize()?;
 
-    fn write_output_buffer(
-        &self,
-        writer: &mut WavWriter<BufWriter<File>>,
-        output_buffer: &[Vec<f32>],
-    ) -> Result<(), AudioConversionError> {
-        for frame in 0..output_buffer[0].len() {
-            for channel in 0..output_buffer.len() {
-                let sample = output_buffer[channel][frame];
-                let int_sample = (sample * i16::MAX as f32) as i16;
-                writer.write_sample(int_sample).map_err(|e| {
-                    AudioConversionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-                })?;
-            }
-        }
         Ok(())
     }
 }
