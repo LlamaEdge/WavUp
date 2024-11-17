@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::DecoderOptions;
+use symphonia::core::codecs::{CODEC_TYPE_FLAC, CODEC_TYPE_OPUS, CODEC_TYPE_VORBIS};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -45,6 +46,26 @@ impl AudioConverter {
         let probed = probe
             .format(&hint, mss, &format_opts, &metadata_opts)
             .map_err(|e| AudioConversionError::DecoderError(e.to_string()))?;
+
+        // Iterate through the tracks and find audio tracks.
+        for track in probed.format.tracks() {
+            println!("Found audio track:");
+            let codec = track.codec_params.codec;
+            match codec {
+                CODEC_TYPE_VORBIS => println!("Codec: Vorbis"),
+                CODEC_TYPE_OPUS => println!("Codec: Opus"),
+                CODEC_TYPE_FLAC => println!("Codec: FLAC"),
+                _ => println!("Codec: Other ({:?})", codec),
+            }
+
+            // Print additional codec parameters.
+            if let Some(channels) = track.codec_params.channels {
+                println!("Channels: {}", channels.count());
+            }
+            if let Some(sample_rate) = track.codec_params.sample_rate {
+                println!("Sample rate: {} Hz", sample_rate);
+            }
+        }
 
         // Get the default track and decoder
         let track = probed
