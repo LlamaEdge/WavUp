@@ -1,4 +1,4 @@
-# TooWav
+# WavUp
 
 This is a simple tool to convert audio files to WAV format.
 
