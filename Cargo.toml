@@ -3,6 +3,14 @@ name = "toowav"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "wavup"
+path = "src/lib.rs"
+
+[[bin]]
+name = "toowav"
+path = "src/main.rs"
+
 [dependencies]
 symphonia = { version = "0.5", features = ["all"] }
 rubato = "0.12"
