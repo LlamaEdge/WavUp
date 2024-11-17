@@ -1,3 +1,7 @@
+#[cfg(feature = "logging")]
+#[macro_use]
+extern crate log;
+
 mod error;
 pub use error::AudioConversionError;
 
@@ -29,7 +33,6 @@ impl AudioConverter {
     }
 
     pub fn convert_audio(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // 打开OGA文件
         let file = File::open(&self.input_path)?;
         let media_source = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -49,24 +52,29 @@ impl AudioConverter {
         )?;
         let mut format = probed.format;
 
+        #[cfg(feature = "logging")]
         {
             // Iterate through the tracks and find audio tracks.
             for track in format.tracks() {
-                println!("Found audio track:");
+                #[cfg(feature = "logging")]
+                info!(target: "stdout", "Found audio track:");
+
                 let codec = track.codec_params.codec;
                 match codec {
-                    CODEC_TYPE_VORBIS => println!("Codec: Vorbis"),
-                    CODEC_TYPE_OPUS => println!("Codec: Opus"),
-                    CODEC_TYPE_FLAC => println!("Codec: FLAC"),
-                    _ => println!("Codec: Other ({:?})", codec),
+                    CODEC_TYPE_VORBIS => {
+                        info!(target: "stdout", "Codec: Vorbis");
+                    }
+                    CODEC_TYPE_OPUS => info!(target: "stdout", "Codec: Opus"),
+                    CODEC_TYPE_FLAC => info!(target: "stdout", "Codec: FLAC"),
+                    _ => info!(target: "stdout", "Codec: Other ({:?})", codec),
                 }
 
                 // Print additional codec parameters.
                 if let Some(channels) = track.codec_params.channels {
-                    println!("Channels: {}", channels.count());
+                    info!(target: "stdout", "Channels: {}", channels.count());
                 }
                 if let Some(sample_rate) = track.codec_params.sample_rate {
-                    println!("Sample rate: {} Hz", sample_rate);
+                    info!(target: "stdout", "Sample rate: {} Hz", sample_rate);
                 }
             }
         }
@@ -108,7 +116,9 @@ impl AudioConverter {
                 }
             }
         } else {
-            println!(
+            #[cfg(feature = "logging")]
+            info!(
+                target: "stdout",
                 "Resampling from {}Hz to {}Hz",
                 original_sample_rate, self.target_sample_rate
             );

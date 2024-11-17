@@ -16,3 +16,8 @@ symphonia = { version = "0.5", features = ["all"] }
 rubato = "0.12"
 hound = "3.5"
 clap = { version = "4.4", features = ["derive"] }
+log = { version = "0.4.21", features = ["std", "kv", "kv_serde"], optional = true }
+
+[features]
+default = ["logging"]
+logging = ["log"]
