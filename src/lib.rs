@@ -24,9 +24,15 @@ pub struct AudioConverter {
 }
 
 impl AudioConverter {
-    pub fn new<S: Into<String>>(input_path: S, output_path: S, target_sample_rate: u32) -> Self {
+    pub fn new<S: Into<String>>(
+        input_path: Option<S>,
+        output_path: S,
+        target_sample_rate: u32,
+    ) -> Self {
+        let input_path = input_path.map(|p| p.into()).unwrap_or_default();
+
         Self {
-            input_path: input_path.into(),
+            input_path,
             output_path: output_path.into(),
             target_sample_rate,
         }
