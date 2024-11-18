@@ -270,27 +270,23 @@ impl AudioConverter {
 
         #[cfg(feature = "logging")]
         {
-            // Iterate through the tracks and find audio tracks.
             for track in format.tracks() {
-                #[cfg(feature = "logging")]
-                info!(target: "stdout", "Found audio track:");
-
                 let codec = track.codec_params.codec;
                 match codec {
                     CODEC_TYPE_VORBIS => {
-                        info!(target: "stdout", "Codec: Vorbis");
+                        info!(target: "stdout", "Codec of input audio: Vorbis");
                     }
-                    CODEC_TYPE_OPUS => info!(target: "stdout", "Codec: Opus"),
-                    CODEC_TYPE_FLAC => info!(target: "stdout", "Codec: FLAC"),
-                    _ => info!(target: "stdout", "Codec: Other ({:?})", codec),
+                    CODEC_TYPE_OPUS => info!(target: "stdout", "Codec of input audio: Opus"),
+                    CODEC_TYPE_FLAC => info!(target: "stdout", "Codec of input audio: FLAC"),
+                    _ => info!(target: "stdout", "Codec of input audio: Other ({:?})", codec),
                 }
 
                 // Print additional codec parameters.
                 if let Some(channels) = track.codec_params.channels {
-                    info!(target: "stdout", "Channels: {}", channels.count());
+                    info!(target: "stdout", "Channels of input audio: {}", channels.count());
                 }
                 if let Some(sample_rate) = track.codec_params.sample_rate {
-                    info!(target: "stdout", "Sample rate: {} Hz", sample_rate);
+                    info!(target: "stdout", "Sample rate of input audio: {} Hz", sample_rate);
                 }
             }
         }
