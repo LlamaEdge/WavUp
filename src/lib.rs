@@ -17,27 +17,55 @@ use symphonia::core::{
     probe::Hint,
 };
 
+#[derive(Debug, Default)]
+pub struct AudioConverterBuilder {
+    input_path: String,
+    output_path: String,
+    target_sample_rate: u32,
+}
+impl AudioConverterBuilder {
+    /// Create a new audio converter builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `output_path` - The path to the output WAV file.
+    ///
+    /// * `target_sample_rate` - The target sample rate for the output WAV file.
+    pub fn new(output_path: impl Into<String>, target_sample_rate: u32) -> Self {
+        Self {
+            output_path: output_path.into(),
+            target_sample_rate,
+            ..Default::default()
+        }
+    }
+
+    /// Set the input path for the audio converter if the input is an audio file.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_path` - The path to the input audio file.
+    pub fn with_input_path<S: Into<String>>(mut self, input_path: S) -> Self {
+        self.input_path = input_path.into();
+        self
+    }
+
+    /// Build the audio converter.
+    pub fn build(self) -> AudioConverter {
+        AudioConverter {
+            input_path: self.input_path,
+            output_path: self.output_path,
+            target_sample_rate: self.target_sample_rate,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct AudioConverter {
     input_path: String,
     output_path: String,
     target_sample_rate: u32,
 }
-
 impl AudioConverter {
-    pub fn new<S: Into<String>>(
-        input_path: Option<S>,
-        output_path: S,
-        target_sample_rate: u32,
-    ) -> Self {
-        let input_path = input_path.map(|p| p.into()).unwrap_or_default();
-
-        Self {
-            input_path,
-            output_path: output_path.into(),
-            target_sample_rate,
-        }
-    }
-
     /// Convert audio from a file to a WAV file.
     pub fn convert_audio(&self) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(&self.input_path)?;
@@ -63,25 +91,22 @@ impl AudioConverter {
         {
             // Iterate through the tracks and find audio tracks.
             for track in format.tracks() {
-                #[cfg(feature = "logging")]
-                info!(target: "stdout", "Found audio track:");
-
                 let codec = track.codec_params.codec;
                 match codec {
                     CODEC_TYPE_VORBIS => {
-                        info!(target: "stdout", "Codec: Vorbis");
+                        info!(target: "stdout", "Codec of input audio: Vorbis");
                     }
-                    CODEC_TYPE_OPUS => info!(target: "stdout", "Codec: Opus"),
-                    CODEC_TYPE_FLAC => info!(target: "stdout", "Codec: FLAC"),
-                    _ => info!(target: "stdout", "Codec: Other ({:?})", codec),
+                    CODEC_TYPE_OPUS => info!(target: "stdout", "Codec of input audio: Opus"),
+                    CODEC_TYPE_FLAC => info!(target: "stdout", "Codec of input audio: FLAC"),
+                    _ => info!(target: "stdout", "Codec of input audio: Other ({:?})", codec),
                 }
 
                 // Print additional codec parameters.
                 if let Some(channels) = track.codec_params.channels {
-                    info!(target: "stdout", "Channels: {}", channels.count());
+                    info!(target: "stdout", "Channels of input audio: {}", channels.count());
                 }
                 if let Some(sample_rate) = track.codec_params.sample_rate {
-                    info!(target: "stdout", "Sample rate: {} Hz", sample_rate);
+                    info!(target: "stdout", "Sample rate of input audio: {} Hz", sample_rate);
                 }
             }
         }

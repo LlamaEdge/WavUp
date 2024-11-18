@@ -20,8 +20,9 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    let converter =
-        wavup::AudioConverter::new(Some(args.input), args.out_file.clone(), args.sample_rate);
+    let converter = wavup::AudioConverterBuilder::new(&args.out_file, args.sample_rate)
+        .with_input_path(args.input)
+        .build();
 
     if let Err(e) = converter.convert_audio() {
         eprintln!("Error converting audio: {}", e);
