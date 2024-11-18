@@ -8,6 +8,7 @@ repository = "https://github.com/LlamaEdge/wavup"
 keywords = ["audio"]
 categories = ["multimedia::audio", "wasm"]
 readme = "README.md"
+documentation = "https://docs.rs/wavup/"
 
 [lib]
 name = "wavup"
