@@ -82,6 +82,9 @@ impl AudioConverter {
         &self,
         media_source: MediaSourceStream,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        #[cfg(feature = "logging")]
+        info!(target: "stdout", "Probing audio");
+
         let mut hint = Hint::new();
         hint.with_extension("oga");
 
@@ -142,7 +145,11 @@ impl AudioConverter {
 
         if original_sample_rate == self.target_sample_rate {
             // No resampling needed
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
+            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder, channels)?;
+
+            #[cfg(feature = "logging")]
+            info!(target: "stdout", "Writing audio to WAV file");
+
             for sample in all_samples {
                 wav_writer.write_sample((sample * 32768.0_f32) as i16)?;
             }
@@ -155,7 +162,10 @@ impl AudioConverter {
             );
 
             // Collect all samples
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
+            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder, channels)?;
+
+            #[cfg(feature = "logging")]
+            info!(target: "stdout", "Resampling audio");
 
             // Prepare samples for resampler (separate channels)
             let mut input_channels: Vec<Vec<f32>> = vec![Vec::new(); channels];
@@ -210,6 +220,9 @@ impl AudioConverter {
                 }
             }
 
+            #[cfg(feature = "logging")]
+            info!(target: "stdout", "Writing resampled audio to WAV file");
+
             // Write resampled data
             for i in 0..output_buffer[0].len() {
                 for ch in 0..channels {
@@ -228,7 +241,11 @@ impl AudioConverter {
         &self,
         format: &mut dyn symphonia::core::formats::FormatReader,
         decoder: &mut dyn symphonia::core::codecs::Decoder,
+        channels: usize,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        #[cfg(feature = "logging")]
+        info!(target: "stdout", "Processing audio samples");
+
         let mut all_samples = Vec::new();
         let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
@@ -246,6 +263,54 @@ impl AudioConverter {
             all_samples.extend(sample_buf.samples().iter().copied());
         }
 
-        Ok(all_samples)
+        // Remove silence from the beginning and end of audio
+        let trimmed_samples = self.trim_silence(&all_samples, channels);
+
+        Ok(trimmed_samples)
+    }
+
+    /// Remove silence from the beginning and end of audio
+    fn trim_silence(&self, samples: &[f32], channels: usize) -> Vec<f32> {
+        #[cfg(feature = "logging")]
+        info!(
+            target: "stdout",
+            "Trimming silence from the beginning and end of audio",
+        );
+
+        const SILENCE_THRESHOLD: f32 = 0.001; // -60 dB
+        const MIN_ACTIVE_SAMPLES: usize = 1024; // Minimum number of active samples
+
+        // Find the start position of non-silent audio
+        let mut start_idx = 0;
+        let mut active_count = 0;
+        for (i, chunk) in samples.chunks(channels).enumerate() {
+            if chunk.iter().any(|&s| s.abs() > SILENCE_THRESHOLD) {
+                active_count += 1;
+                if active_count >= MIN_ACTIVE_SAMPLES {
+                    start_idx = i.saturating_sub(MIN_ACTIVE_SAMPLES);
+                    break;
+                }
+            } else {
+                active_count = 0;
+            }
+        }
+
+        // Find the end position of non-silent audio
+        let mut end_idx = samples.len() / channels;
+        active_count = 0;
+        for (i, chunk) in samples.chunks(channels).rev().enumerate() {
+            if chunk.iter().any(|&s| s.abs() > SILENCE_THRESHOLD) {
+                active_count += 1;
+                if active_count >= MIN_ACTIVE_SAMPLES {
+                    end_idx = samples.len() / channels - i + MIN_ACTIVE_SAMPLES;
+                    break;
+                }
+            } else {
+                active_count = 0;
+            }
+        }
+
+        // Extract the non-silent portion
+        samples[start_idx * channels..end_idx * channels].to_vec()
     }
 }
