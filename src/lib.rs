@@ -145,7 +145,7 @@ impl AudioConverter {
 
         if original_sample_rate == self.target_sample_rate {
             // No resampling needed
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder, channels)?;
+            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
 
             #[cfg(feature = "logging")]
             info!(target: "stdout", "Writing audio to WAV file");
@@ -162,7 +162,7 @@ impl AudioConverter {
             );
 
             // Collect all samples
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder, channels)?;
+            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
 
             #[cfg(feature = "logging")]
             info!(target: "stdout", "Resampling audio");
@@ -241,7 +241,6 @@ impl AudioConverter {
         &self,
         format: &mut dyn symphonia::core::formats::FormatReader,
         decoder: &mut dyn symphonia::core::codecs::Decoder,
-        channels: usize,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         #[cfg(feature = "logging")]
         info!(target: "stdout", "Processing audio samples");
@@ -263,14 +262,11 @@ impl AudioConverter {
             all_samples.extend(sample_buf.samples().iter().copied());
         }
 
-        // Remove silence from the beginning and end of audio
-        let trimmed_samples = self.trim_silence(&all_samples, channels);
-
-        Ok(trimmed_samples)
+        Ok(all_samples)
     }
 
     /// Remove silence from the beginning and end of audio
-    fn trim_silence(&self, samples: &[f32], channels: usize) -> Vec<f32> {
+    fn _trim_silence(&self, samples: &[f32], channels: usize) -> Vec<f32> {
         #[cfg(feature = "logging")]
         info!(
             target: "stdout",
