@@ -145,10 +145,15 @@ impl AudioConverter {
 
         if original_sample_rate == self.target_sample_rate {
             // No resampling needed
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
+            let all_samples = self.process_audio_samples(
+                &mut *format,
+                &mut *decoder,
+                channels,
+                original_sample_rate,
+            )?;
 
             #[cfg(feature = "logging")]
-            info!(target: "stdout", "Writing audio to WAV file");
+            info!(target: "stdout", "Writing audio to WAV file: {}", &self.output_path);
 
             for sample in all_samples {
                 wav_writer.write_sample((sample * 32768.0_f32) as i16)?;
@@ -162,7 +167,12 @@ impl AudioConverter {
             );
 
             // Collect all samples
-            let all_samples = self.process_audio_samples(&mut *format, &mut *decoder)?;
+            let all_samples = self.process_audio_samples(
+                &mut *format,
+                &mut *decoder,
+                channels,
+                original_sample_rate,
+            )?;
 
             #[cfg(feature = "logging")]
             info!(target: "stdout", "Resampling audio");
@@ -221,12 +231,12 @@ impl AudioConverter {
             }
 
             #[cfg(feature = "logging")]
-            info!(target: "stdout", "Writing resampled audio to WAV file");
+            info!(target: "stdout", "Writing resampled audio to WAV file: {}", &self.output_path);
 
             // Write resampled data
             for i in 0..output_buffer[0].len() {
-                for ch in 0..channels {
-                    let sample = (output_buffer[ch][i] * 32768.0) as i16;
+                for item in output_buffer.iter().take(channels) {
+                    let sample = (item[i] * 32768.0) as i16;
                     wav_writer.write_sample(sample)?;
                 }
             }
@@ -241,6 +251,8 @@ impl AudioConverter {
         &self,
         format: &mut dyn symphonia::core::formats::FormatReader,
         decoder: &mut dyn symphonia::core::codecs::Decoder,
+        channels: usize,
+        original_sample_rate: u32,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         #[cfg(feature = "logging")]
         info!(target: "stdout", "Processing audio samples");
@@ -262,51 +274,46 @@ impl AudioConverter {
             all_samples.extend(sample_buf.samples().iter().copied());
         }
 
+        all_samples = self.trim_ending_silence(&all_samples, channels, original_sample_rate);
+
         Ok(all_samples)
     }
 
-    /// Remove silence from the beginning and end of audio
-    fn _trim_silence(&self, samples: &[f32], channels: usize) -> Vec<f32> {
-        #[cfg(feature = "logging")]
-        info!(
-            target: "stdout",
-            "Trimming silence from the beginning and end of audio",
-        );
+    fn trim_ending_silence(&self, samples: &[f32], channels: usize, sample_rate: u32) -> Vec<f32> {
+        // -20 dB ≈ 0.1
+        // -30 dB ≈ 0.0316
+        // -40 dB ≈ 0.01
+        // -50 dB ≈ 0.0032
+        // -60 dB ≈ 0.001
+        let threshold = 0.01;
 
-        const SILENCE_THRESHOLD: f32 = 0.001; // -60 dB
-        const MIN_ACTIVE_SAMPLES: usize = 1024; // Minimum number of active samples
+        // Look for the last non-silent sample
+        let mut last_non_silent_index = 0;
 
-        // Find the start position of non-silent audio
-        let mut start_idx = 0;
-        let mut active_count = 0;
-        for (i, chunk) in samples.chunks(channels).enumerate() {
-            if chunk.iter().any(|&s| s.abs() > SILENCE_THRESHOLD) {
-                active_count += 1;
-                if active_count >= MIN_ACTIVE_SAMPLES {
-                    start_idx = i.saturating_sub(MIN_ACTIVE_SAMPLES);
+        // First pass: find the last non-silent sample
+        for i in (0..samples.len()).rev().step_by(channels) {
+            let mut silent = true;
+            for ch in 0..channels {
+                if !self.is_silent(samples[i + ch], threshold) {
+                    silent = false;
+                    last_non_silent_index = i;
                     break;
                 }
-            } else {
-                active_count = 0;
+            }
+            if !silent {
+                break;
             }
         }
 
-        // Find the end position of non-silent audio
-        let mut end_idx = samples.len() / channels;
-        active_count = 0;
-        for (i, chunk) in samples.chunks(channels).rev().enumerate() {
-            if chunk.iter().any(|&s| s.abs() > SILENCE_THRESHOLD) {
-                active_count += 1;
-                if active_count >= MIN_ACTIVE_SAMPLES {
-                    end_idx = samples.len() / channels - i + MIN_ACTIVE_SAMPLES;
-                    break;
-                }
-            } else {
-                active_count = 0;
-            }
-        }
+        // Add a small buffer (e.g., 0.5 seconds) after the last non-silent sample
+        let buffer_duration_secs = 0.5;
+        let buffer_samples = (buffer_duration_secs * sample_rate as f32) as usize * channels;
+        let trim_index = (last_non_silent_index + buffer_samples).min(samples.len());
 
-        // Extract the non-silent portion
-        samples[start_idx * channels..end_idx * channels].to_vec()
+        samples[..trim_index].to_vec()
+    }
+
+    fn is_silent(&self, sample: f32, threshold: f32) -> bool {
+        sample.abs() < threshold
     }
 }
