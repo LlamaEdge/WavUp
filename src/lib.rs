@@ -134,6 +134,9 @@ impl AudioConverter {
         let channels = track_info.channels.unwrap().count();
         let original_sample_rate = track_info.sample_rate.unwrap();
 
+        #[cfg(feature = "logging")]
+        debug!(target: "stdout", "track_info: {:?}", track_info);
+
         // Set up WAV writer
         let spec = WavSpec {
             channels: channels as u16,
@@ -257,6 +260,13 @@ impl AudioConverter {
         #[cfg(feature = "logging")]
         info!(target: "stdout", "Processing audio samples");
 
+        #[cfg(feature = "logging")]
+        debug!(
+            target: "stdout",
+            "channels: {}, original_sample_rate: {}",
+            channels, original_sample_rate
+        );
+
         let mut all_samples = Vec::new();
         let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
@@ -280,6 +290,8 @@ impl AudioConverter {
     }
 
     fn trim_ending_silence(&self, samples: &[f32], channels: usize, sample_rate: u32) -> Vec<f32> {
+        #[cfg(feature = "logging")]
+        info!(target: "stdout", "Trimming ending silence");
         // -20 dB ≈ 0.1
         // -30 dB ≈ 0.0316
         // -40 dB ≈ 0.01
@@ -290,8 +302,17 @@ impl AudioConverter {
         // Look for the last non-silent sample
         let mut last_non_silent_index = 0;
 
+        #[cfg(feature = "logging")]
+        debug!(
+            target: "stdout",
+            "len of samples: {}, channels: {}, sample_rate: {}",
+            samples.len(),
+            channels,
+            sample_rate
+        );
+
         // First pass: find the last non-silent sample
-        for i in (0..samples.len()).rev().step_by(channels) {
+        for i in (0..samples.len() - channels).rev().step_by(channels) {
             let mut silent = true;
             for ch in 0..channels {
                 if !self.is_silent(samples[i + ch], threshold) {
