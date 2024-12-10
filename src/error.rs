@@ -7,6 +7,7 @@ pub enum AudioConversionError {
     DecoderError(String),
     ResamplerError(String),
     UnsupportedFormat(String),
+    InvalidSampleCount(String),
 }
 
 impl fmt::Display for AudioConversionError {
@@ -16,6 +17,7 @@ impl fmt::Display for AudioConversionError {
             Self::DecoderError(e) => write!(f, "Decoder error: {}", e),
             Self::ResamplerError(e) => write!(f, "Resampler error: {}", e),
             Self::UnsupportedFormat(e) => write!(f, "Unsupported format: {}", e),
+            Self::InvalidSampleCount(e) => write!(f, "Invalid sample count: {}", e),
         }
     }
 }
