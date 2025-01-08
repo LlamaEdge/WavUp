@@ -186,6 +186,9 @@ impl AudioConverter {
             )?;
 
             #[cfg(feature = "logging")]
+            debug!(target: "stdout", "num of samples after trimming: {}", all_samples.len());
+
+            #[cfg(feature = "logging")]
             info!(target: "stdout", "Resampling audio");
 
             // Prepare samples for resampler (separate channels)
@@ -295,6 +298,9 @@ impl AudioConverter {
             all_samples.extend(sample_buf.samples().iter().copied());
         }
 
+        #[cfg(feature = "logging")]
+        debug!(target: "stdout", "num of samples before trimming: {}", all_samples.len());
+
         self.trim_ending_silence(&all_samples, channels, original_sample_rate)
     }
 
@@ -312,6 +318,9 @@ impl AudioConverter {
         // -50 dB ≈ 0.0032
         // -60 dB ≈ 0.001
         let threshold = 0.01;
+
+        #[cfg(feature = "logging")]
+        debug!(target: "stdout", "threshold for trimming: {}. Possible values: 0.1(-20dB), 0.0316(-30dB), 0.01(-40dB), 0.0032(-50dB), 0.001(-60dB)", threshold);
 
         // Look for the last non-silent sample
         let mut last_non_silent_index = 0;
@@ -332,6 +341,7 @@ impl AudioConverter {
                 channels
             );
 
+            #[cfg(feature = "logging")]
             error!(target: "stdout", "{}", err_msg);
 
             return Err(AudioConversionError::InvalidSampleCount(err_msg).into());
@@ -344,7 +354,11 @@ impl AudioConverter {
             for ch in 0..channels {
                 if !self.is_silent(samples[i + ch], threshold) {
                     silent = false;
-                    last_non_silent_index = i;
+                    last_non_silent_index = i * channels;
+
+                    #[cfg(feature = "logging")]
+                    debug!(target: "stdout", "last_non_silent_index: {}", last_non_silent_index);
+
                     break;
                 }
             }
