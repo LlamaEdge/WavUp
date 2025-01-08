@@ -1,6 +1,6 @@
 # WavUp
 
-This is a simple tool to convert audio files to WAV format.
+`Wavup` is a simple tool to convert audio files to WAV format. The audio formats supported are:
 
 - The formats supported are `caf`, `isomp4`, `mkv`, `ogg`, `aiff`, `wav`.
 
@@ -8,11 +8,24 @@ This is a simple tool to convert audio files to WAV format.
 
 ## Usage
 
-```bash
-wasmedge --dir .:. ./target/wasm32-wasip1/release/wavup.wasm \
-  --input ./audio/mono_ch_audio.mp3 \
-  --out-file output.wav
+- Use as a wasm app
 
-# or using short forms:
-wasmedge --dir .:. ./target/wasm32-wasip1/release/wavup.wasm -i audio/mono_ch_audio.mp3 -o output.wav
-```
+  ```bash
+  wasmedge --dir .:. ./target/wasm32-wasip1/release/wavup.wasm \
+    --input ./audio/mono_ch_audio.mp3 \
+    --out-file output.wav
+
+  # or using short forms:
+  wasmedge --dir .:. ./target/wasm32-wasip1/release/wavup.wasm -i audio/mono_ch_audio.mp3 -o output.wav
+  ```
+
+- Use as a library
+
+  Add the following to your `Cargo.toml`:
+
+    ```toml
+    [dependencies]
+    wavup = "0.1.0"
+    ```
+
+  You can find the API reference [here](https://docs.rs/wavup/latest/wavup/).
